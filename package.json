@@ -6,10 +6,10 @@
     "vue": "^3.5.0"
   },
   "scripts": {
-    "start": "vite --host 0.0.0.0",
-    "dev": "vite --host 0.0.0.0",
-    "build": "vite build",
-    "preview": "vite preview --host 0.0.0.0"
+    "start": "vite --configLoader runner --host 0.0.0.0",
+    "dev": "vite --configLoader runner --host 0.0.0.0",
+    "build": "vite build --configLoader runner",
+    "preview": "vite preview --configLoader runner --host 0.0.0.0"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^6.0.0",

@@ -1,31 +1,28 @@
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 import projects from './data/projects.js';
 
 const siteUrl = 'https://jeyamohanme.vercel.app';
 const officialEmail = 'jeyamohan98@gmail.com';
 const isPrivacyPage = ref(window.location.pathname.replace(/\/+$/, '') === '/privacy-policy');
 const showBackToTop = ref(window.scrollY > 320);
+const rocketFlying = ref(false);
 const darkMode = ref(isDarkTime());
 const menuOpen = ref(false);
 const searchQuery = ref('');
 const toastMessage = ref('');
-const downloadDocument = ref(null);
-const downloadDialog = ref(null);
-const downloadDetails = ref({ email: '', jobRole: '', contact: '' });
-const downloadError = ref('');
-const downloading = ref(false);
 const previewDocument = ref(null);
 const previewDialog = ref(null);
 const projectNumbers = new Map(projects.map((project, index) => [project.id, index + 1]));
 let toastTimer;
-let downloadController = null;
 let themeBoundaryTimer;
+let rocketFlightTimer;
 let themeOverrideUntil = 0;
 let textRevealObserver = null;
+let journeyObserver = null;
 const revealedTextElements = new WeakSet();
 
-const textRevealSelector = 'h1, h2, h3, h4, p, li, a';
+const textRevealSelector = 'h1, h2, h3, h4, p, li, a, .chip';
 const textRevealAreas = 'main section, main.policy-page, .site-footer';
 
 function isDarkTime(date = new Date()) {
@@ -135,18 +132,21 @@ const documents = [
     key: 'cv',
     title: 'Curriculum Vitae (CV)',
     file: '/assets/documents/manoharan%20jeyamohan%20cv.pdf',
+    downloadName: 'Jeyamohan-Manoharan-CV.pdf',
     description: 'Updated CV with latest experience and skills.',
   },
   {
     key: 'service',
     title: 'Service Letter',
     file: '/assets/documents/Service%20Letter%20-JM.pdf',
+    downloadName: 'Jeyamohan-Manoharan-Service-Letter.pdf',
     description: 'Official letter from prior organization.',
   },
   {
     key: 'internship',
     title: 'Internship Completion Letter',
     file: '/assets/documents/INTERNSHIP.pdf',
+    downloadName: 'Jeyamohan-Manoharan-Internship-Letter.pdf',
     description: 'Proof of completed internship.',
   },
 ];
@@ -169,7 +169,7 @@ const policySections = [
     title: 'Messages and downloads',
     items: [
       'The contact form opens your email app. This site does not send or save your message.',
-      'The download form checks your details in your browser. This site does not send or save them.',
+      'Documents download directly. This site does not ask for or save personal details to provide them.',
     ],
   },
   {
@@ -230,32 +230,66 @@ function animateTextElement(element, delay) {
   if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
 
   if (!element.textContent.trim() || !element.getClientRects().length) return delay;
-  if (element.matches('.button, .sr-only')) return delay;
+  if (element.matches('.button, .sr-only, .scroll-cue')) return delay;
   if (revealedTextElements.has(element)) return delay;
 
-  const bounds = element.getBoundingClientRect();
-  const lineHeight = Number.parseFloat(getComputedStyle(element).lineHeight);
-  const fontSize = Number.parseFloat(getComputedStyle(element).fontSize);
-  const lineHeightPixels = Number.isFinite(lineHeight)
-    ? lineHeight
-    : (Number.isFinite(fontSize) ? fontSize * 1.4 : 16);
-  const lineCount = Math.max(1, Math.round(bounds.height / lineHeightPixels));
-  const lineDuration = 110;
   revealedTextElements.add(element);
-  const animation = element.animate(
-    [
-      { clipPath: 'inset(0 0 100% 0)' },
-      { clipPath: 'inset(0 0 0 0)' },
-    ],
-    {
-      duration: lineCount * lineDuration,
-      delay,
-      easing: `steps(${lineCount}, end)`,
-      fill: 'both',
-    },
-  );
-  animation.onfinish = () => animation.cancel();
-  return delay + lineCount * (lineDuration + 25);
+  const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+  const textNodes = [];
+  while (walker.nextNode()) {
+    const textNode = walker.currentNode;
+    if (!textNode.textContent.trim() || textNode.parentElement?.closest('[aria-hidden="true"]')) continue;
+    textNodes.push(textNode);
+  }
+
+  let typingDelay = delay;
+  let characterIndex = 0;
+  textNodes.forEach((textNode) => {
+    const textRun = document.createElement('span');
+    textRun.className = 'typewriter-run';
+    let wordRun = null;
+    Array.from(textNode.textContent).forEach((character) => {
+      if (/\s/.test(character)) {
+        if (wordRun) {
+          textRun.append(wordRun);
+          wordRun = null;
+        }
+        textRun.append(document.createTextNode(character));
+        typingDelay += 5;
+        characterIndex += 1;
+        return;
+      }
+
+      if (!wordRun) {
+        wordRun = document.createElement('span');
+        wordRun.className = 'typewriter-word';
+      }
+
+      const characterElement = document.createElement('span');
+      characterElement.className = 'typewriter-character';
+      characterElement.textContent = character;
+      characterElement.style.opacity = '0';
+      wordRun.append(characterElement);
+
+      const animation = characterElement.animate(
+        [{ opacity: 0 }, { opacity: 1 }],
+        { duration: 20, delay: typingDelay, easing: 'steps(1, end)', fill: 'both' },
+      );
+      animation.onfinish = () => {
+        characterElement.style.opacity = '1';
+        animation.cancel();
+      };
+
+      typingDelay += /[.!?,;:]/.test(character)
+        ? 48
+        : 12 + (characterIndex % 3) * 2;
+      characterIndex += 1;
+    });
+    if (wordRun) textRun.append(wordRun);
+    textNode.replaceWith(textRun);
+  });
+
+  return typingDelay;
 }
 
 function animateSectionText(section) {
@@ -268,7 +302,10 @@ function animateSectionText(section) {
     && !element.parentElement?.closest(textRevealSelector)
   ));
 
-  textElements.reduce((delay, element) => animateTextElement(element, delay), 0);
+  let nextDelay = 0;
+  textElements.forEach((element) => {
+    nextDelay = animateTextElement(element, nextDelay);
+  });
 }
 
 function handleSectionPointerOver(event) {
@@ -287,7 +324,15 @@ function handleSectionPointerOver(event) {
 }
 
 function scrollToTop() {
-  const behavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (!reduceMotion) {
+    rocketFlying.value = true;
+    window.clearTimeout(rocketFlightTimer);
+    rocketFlightTimer = window.setTimeout(() => {
+      rocketFlying.value = false;
+    }, 900);
+  }
+  const behavior = reduceMotion ? 'auto' : 'smooth';
   window.scrollTo({ top: 0, behavior });
 }
 
@@ -364,65 +409,6 @@ function handlePreviewClose() {
   previewDocument.value = null;
 }
 
-async function openDownload(document) {
-  downloadDocument.value = document;
-  downloadDetails.value = { email: '', jobRole: '', contact: '' };
-  downloadError.value = '';
-  await nextTick();
-  downloadDialog.value?.showModal();
-}
-
-function closeDownload() {
-  downloadController?.abort();
-  downloadController = null;
-  downloadDialog.value?.close();
-  downloadDocument.value = null;
-  downloadError.value = '';
-}
-
-function handleDownloadClose() {
-  if (!downloadDocument.value) return;
-  downloadController?.abort();
-  downloadController = null;
-  downloadDocument.value = null;
-  downloadError.value = '';
-}
-
-async function submitDownload() {
-  if (!downloadDocument.value || downloading.value) return;
-  const requestedDocument = downloadDocument.value;
-  const controller = new AbortController();
-  downloadController = controller;
-  downloading.value = true;
-  downloadError.value = '';
-
-  try {
-    const response = await fetch(requestedDocument.file, { signal: controller.signal });
-    if (!response.ok) {
-      throw new Error(`The document could not be loaded (HTTP ${response.status}).`);
-    }
-
-    const blob = await response.blob();
-    if (controller.signal.aborted) return;
-    const objectUrl = URL.createObjectURL(blob);
-    const link = window.document.createElement('a');
-    link.href = objectUrl;
-    link.download = `${requestedDocument.key}.pdf`;
-    window.document.body.appendChild(link);
-    link.click();
-    link.remove();
-    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
-    showToast(`${requestedDocument.title} download started.`);
-    closeDownload();
-  } catch (error) {
-    if (controller.signal.aborted || (error instanceof Error && error.name === 'AbortError')) return;
-    downloadError.value = error instanceof Error ? error.message : 'The document could not be downloaded.';
-  } finally {
-    if (downloadController === controller) downloadController = null;
-    downloading.value = false;
-  }
-}
-
 function submitContact(event) {
   const formData = new FormData(event.currentTarget);
   const name = String(formData.get('name') || '').trim();
@@ -448,6 +434,28 @@ onMounted(() => {
   document.addEventListener('visibilitychange', updateAutomaticTheme);
   document.querySelector('.site-shell')?.addEventListener('pointerover', handleSectionPointerOver);
 
+  const journeyCards = [...document.querySelectorAll('.journey-card')];
+  const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (prefersReducedMotion || !('IntersectionObserver' in window)) {
+    journeyCards.forEach((card) => card.classList.add('is-visible'));
+  } else if (journeyCards.length) {
+    journeyObserver = new IntersectionObserver((entries, observer) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        const cardIndex = journeyCards.indexOf(entry.target);
+        const batchStart = Math.floor(cardIndex / 4) * 4;
+        journeyCards.slice(batchStart, batchStart + 4).forEach((card) => {
+          card.classList.add('is-visible');
+        });
+        observer.unobserve(entry.target);
+      });
+    }, { threshold: 0.2, rootMargin: '0px 0px -10% 0px' });
+
+    journeyCards.filter((_, index) => index % 4 === 0).forEach((card) => {
+      journeyObserver.observe(card);
+    });
+  }
+
   if (
     !window.matchMedia('(hover: hover) and (pointer: fine)').matches
     && 'IntersectionObserver' in window
@@ -470,14 +478,15 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
-  downloadController?.abort();
   window.removeEventListener('popstate', updateRoute);
   window.removeEventListener('scroll', updateBackToTopVisibility);
   window.removeEventListener('focus', updateAutomaticTheme);
   document.removeEventListener('visibilitychange', updateAutomaticTheme);
   document.querySelector('.site-shell')?.removeEventListener('pointerover', handleSectionPointerOver);
   textRevealObserver?.disconnect();
+  journeyObserver?.disconnect();
   window.clearTimeout(themeBoundaryTimer);
+  window.clearTimeout(rocketFlightTimer);
   window.clearTimeout(toastTimer);
 });
 </script>
@@ -532,17 +541,18 @@ onUnmounted(() => {
           >
             {{ darkMode ? '☼' : '◐' }}
           </button>
-          <button
+        <button
             class="menu-toggle"
             type="button"
             :aria-expanded="menuOpen"
-            aria-label="Toggle navigation"
+            :aria-label="menuOpen ? 'Close navigation' : 'Open navigation'"
+            aria-controls="mobile-navigation"
             @click="menuOpen = !menuOpen"
           >
             {{ menuOpen ? '×' : '☰' }}
           </button>
         </div>
-        <nav v-if="menuOpen" class="mobile-nav" aria-label="Mobile navigation">
+        <nav v-if="menuOpen" id="mobile-navigation" class="mobile-nav" aria-label="Mobile navigation">
           <a v-for="item in navItems" :key="item.href" :href="item.href" @click="menuOpen = false">{{ item.label }}</a>
           <a class="mobile-privacy-link privacy-policy-link" href="/privacy-policy" @click="menuOpen = false">Privacy policy</a>
         </nav>
@@ -575,8 +585,14 @@ onUnmounted(() => {
           </div>
           <div class="hero-visual">
             <div class="hero-image-frame">
+              <span class="profile-fan-glow" aria-hidden="true"></span>
+              <span class="profile-edge-glow" aria-hidden="true"></span>
               <img src="/assets/images/4.jpg" alt="Jeyamohan Manoharan" fetchpriority="high" />
+              <span class="profile-shimmer" aria-hidden="true"></span>
               <span class="image-index">PROFILE · JM</span>
+              <span class="profile-sparkle sparkle-one" aria-hidden="true">✦</span>
+              <span class="profile-sparkle sparkle-two" aria-hidden="true">✦</span>
+              <span class="profile-sparkle sparkle-three" aria-hidden="true">✦</span>
             </div>
             <div class="hero-note">
               <span class="note-mark">◆</span>
@@ -585,11 +601,15 @@ onUnmounted(() => {
             <div class="geometry-stack" aria-hidden="true">
               <span class="geometry-square"></span>
               <span class="geometry-triangle"></span>
-              <span class="geometry-pyramid"><i></i><b></b></span>
+              <span class="geometry-pyramid">
+                <i></i><b></b>
+                <span class="geometry-camera-flash"></span>
+                <span class="geometry-ai-label">AI</span>
+              </span>
               <span class="geometry-trail"></span>
             </div>
           </div>
-          <a class="scroll-cue" href="#experience"><span></span> SCROLL TO EXPLORE</a>
+          <a class="scroll-cue" href="#experience">SCROLL TO EXPLORE</a>
         </section>
 
         <section class="about-section section-wrap">
@@ -708,8 +728,8 @@ onUnmounted(() => {
               <label class="project-search">
                 <span class="sr-only">Search projects</span>
                 <span aria-hidden="true">⌕</span>
-                <input v-model="searchQuery" type="search" placeholder="Find a project" />
-                <span class="search-count">{{ filteredProjects.length }}</span>
+                <input v-model="searchQuery" type="search" aria-label="Search projects" placeholder="Find a project" />
+                <span class="search-count" aria-live="polite">{{ filteredProjects.length }}</span>
               </label>
             </div>
             <p class="section-description project-intro">
@@ -787,11 +807,11 @@ onUnmounted(() => {
               </div>
               <div class="document-actions">
                 <button class="text-link" type="button" @click="openPreview(document)">Preview ↗</button>
-                <button class="text-link" type="button" @click="openDownload(document)">Download ↓</button>
+                <a class="text-link" :href="document.file" :download="document.downloadName">Download ↓</a>
               </div>
             </article>
           </div>
-          <p class="document-note">Your details are checked in your browser and are not sent or saved by this site.</p>
+          <p class="document-note">Documents download directly. No personal details are needed.</p>
         </section>
 
         <section id="contact" class="contact-section">
@@ -854,42 +874,22 @@ onUnmounted(() => {
         </div>
       </dialog>
 
-      <dialog
-        v-if="downloadDocument"
-        ref="downloadDialog"
-        class="download-dialog"
-        @click.self="closeDownload"
-        @cancel.prevent="closeDownload"
-        @close="handleDownloadClose"
-      >
-        <form class="download-form" @submit.prevent="submitDownload">
-          <button type="button" class="dialog-close" aria-label="Close download form" @click="closeDownload">×</button>
-          <p class="eyebrow">A QUICK DOWNLOAD REQUEST</p>
-          <h2>{{ downloadDocument.title }}</h2>
-          <p class="download-intro">Add your details to download. They stay in your browser.</p>
-          <label>Email<input v-model.trim="downloadDetails.email" type="email" autocomplete="email" placeholder="you@company.com" required /></label>
-          <label>Job role<input v-model.trim="downloadDetails.jobRole" type="text" placeholder="e.g. Product Analyst" required /></label>
-          <label>Contact number<input v-model.trim="downloadDetails.contact" type="tel" inputmode="numeric" pattern="[0-9]{10,15}" placeholder="10–15 digits" required /></label>
-          <p v-if="downloadError" class="form-error" role="alert">{{ downloadError }}</p>
-          <button class="button button-dark download-submit" type="submit" :disabled="downloading">
-            {{ downloading ? 'Preparing…' : 'Download document ↓' }}
-          </button>
-        </form>
-      </dialog>
     </template>
 
     <Transition name="back-to-top">
       <button
-        v-if="!isPrivacyPage && showBackToTop"
+        v-if="!isPrivacyPage && (showBackToTop || rocketFlying)"
         class="back-to-top"
+        :class="{ 'is-flying': rocketFlying }"
         type="button"
         aria-label="Back to top"
         title="Back to top"
         @click="scrollToTop"
       >
-        <span class="back-to-top-icons" aria-hidden="true">
-          <span class="back-to-top-pen">✍️</span>
-        </span>
+        <svg class="back-to-top-plane" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+          <path d="M3 14.5 29 3 18.6 29l-4.9-10.3L3 14.5Z" />
+          <path d="m13.7 18.7 15.3-15.7" />
+        </svg>
       </button>
     </Transition>
 
