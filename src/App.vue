@@ -22,6 +22,11 @@ let toastTimer;
 let downloadController = null;
 let themeBoundaryTimer;
 let themeOverrideUntil = 0;
+let textRevealObserver = null;
+const revealedTextElements = new WeakSet();
+
+const textRevealSelector = 'h1, h2, h3, h4, p, li, a';
+const textRevealAreas = 'main section, main.policy-page, .site-footer';
 
 function isDarkTime(date = new Date()) {
   const hour = date.getHours();
@@ -221,6 +226,66 @@ function updateBackToTopVisibility() {
   showBackToTop.value = window.scrollY > 320;
 }
 
+function animateTextElement(element, delay) {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+  if (!element.textContent.trim() || !element.getClientRects().length) return delay;
+  if (element.matches('.button, .sr-only')) return delay;
+  if (revealedTextElements.has(element)) return delay;
+
+  const bounds = element.getBoundingClientRect();
+  const lineHeight = Number.parseFloat(getComputedStyle(element).lineHeight);
+  const fontSize = Number.parseFloat(getComputedStyle(element).fontSize);
+  const lineHeightPixels = Number.isFinite(lineHeight)
+    ? lineHeight
+    : (Number.isFinite(fontSize) ? fontSize * 1.4 : 16);
+  const lineCount = Math.max(1, Math.round(bounds.height / lineHeightPixels));
+  const lineDuration = 110;
+  revealedTextElements.add(element);
+  const animation = element.animate(
+    [
+      { clipPath: 'inset(0 0 100% 0)' },
+      { clipPath: 'inset(0 0 0 0)' },
+    ],
+    {
+      duration: lineCount * lineDuration,
+      delay,
+      easing: `steps(${lineCount}, end)`,
+      fill: 'both',
+    },
+  );
+  animation.onfinish = () => animation.cancel();
+  return delay + lineCount * (lineDuration + 25);
+}
+
+function animateSectionText(section) {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+  const textElements = [...section.querySelectorAll(textRevealSelector)].filter((element) => (
+    element.textContent.trim()
+    && element.getClientRects().length
+    && !element.matches('.button, .sr-only')
+    && !element.parentElement?.closest(textRevealSelector)
+  ));
+
+  textElements.reduce((delay, element) => animateTextElement(element, delay), 0);
+}
+
+function handleSectionPointerOver(event) {
+  if (!window.matchMedia('(hover: hover) and (pointer: fine)').matches) return;
+  const target = event.target instanceof Element ? event.target : null;
+  const navLink = target?.closest('.desktop-nav a, .mobile-nav a');
+  if (navLink) {
+    if (event.relatedTarget instanceof Node && navLink.contains(event.relatedTarget)) return;
+    animateTextElement(navLink, 0);
+    return;
+  }
+
+  const section = target?.closest(textRevealAreas);
+  if (!section || (event.relatedTarget instanceof Node && section.contains(event.relatedTarget))) return;
+  animateSectionText(section);
+}
+
 function scrollToTop() {
   const behavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
   window.scrollTo({ top: 0, behavior });
@@ -381,6 +446,22 @@ onMounted(() => {
   window.addEventListener('scroll', updateBackToTopVisibility, { passive: true });
   window.addEventListener('focus', updateAutomaticTheme);
   document.addEventListener('visibilitychange', updateAutomaticTheme);
+  document.querySelector('.site-shell')?.addEventListener('pointerover', handleSectionPointerOver);
+
+  if (
+    !window.matchMedia('(hover: hover) and (pointer: fine)').matches
+    && 'IntersectionObserver' in window
+  ) {
+    textRevealObserver = new IntersectionObserver((entries, observer) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        animateSectionText(entry.target);
+        observer.unobserve(entry.target);
+      });
+    }, { threshold: 0.16 });
+    document.querySelectorAll(textRevealAreas).forEach((section) => textRevealObserver.observe(section));
+  }
+
   if (!isPrivacyPage.value && window.location.hash) {
     requestAnimationFrame(() => {
       document.getElementById(window.location.hash.slice(1))?.scrollIntoView();
@@ -394,6 +475,8 @@ onUnmounted(() => {
   window.removeEventListener('scroll', updateBackToTopVisibility);
   window.removeEventListener('focus', updateAutomaticTheme);
   document.removeEventListener('visibilitychange', updateAutomaticTheme);
+  document.querySelector('.site-shell')?.removeEventListener('pointerover', handleSectionPointerOver);
+  textRevealObserver?.disconnect();
   window.clearTimeout(themeBoundaryTimer);
   window.clearTimeout(toastTimer);
 });
@@ -440,6 +523,7 @@ onUnmounted(() => {
         </nav>
         <div class="header-actions">
           <a class="header-contact" href="#contact">Let's talk <span aria-hidden="true">↗</span></a>
+          <a class="header-contact privacy-policy-link" href="/privacy-policy">Privacy policy</a>
           <button
             class="theme-toggle"
             type="button"
@@ -460,6 +544,7 @@ onUnmounted(() => {
         </div>
         <nav v-if="menuOpen" class="mobile-nav" aria-label="Mobile navigation">
           <a v-for="item in navItems" :key="item.href" :href="item.href" @click="menuOpen = false">{{ item.label }}</a>
+          <a class="mobile-privacy-link privacy-policy-link" href="/privacy-policy" @click="menuOpen = false">Privacy policy</a>
         </nav>
       </header>
 
