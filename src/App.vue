@@ -20,6 +20,7 @@ let rocketFlightTimer;
 let themeOverrideUntil = 0;
 let textRevealObserver = null;
 let journeyObserver = null;
+let researchMagnifierObserver = null;
 const revealedTextElements = new WeakSet();
 
 const textRevealSelector = 'h1, h2, h3, h4, p, li, a, .chip';
@@ -226,14 +227,71 @@ function updateBackToTopVisibility() {
   showBackToTop.value = window.scrollY > 320;
 }
 
+function moveResearchMagnifier(event) {
+  if (!window.matchMedia('(hover: hover) and (pointer: fine)').matches) return;
+
+  const card = event.currentTarget;
+  const magnifier = card.querySelector('.research-magnifier');
+  if (!magnifier) return;
+
+  const bounds = card.getBoundingClientRect();
+  const radius = window.matchMedia('(max-width: 760px)').matches ? 48 : 56;
+  const xMargin = Math.min(50, (radius / bounds.width) * 100);
+  const yMargin = Math.min(50, (radius / bounds.height) * 100);
+  const x = Math.min(100 - xMargin, Math.max(xMargin, ((event.clientX - bounds.left) / bounds.width) * 100));
+  const y = Math.min(100 - yMargin, Math.max(yMargin, ((event.clientY - bounds.top) / bounds.height) * 100));
+
+  magnifier.style.setProperty('--research-lens-x', `${x}%`);
+  magnifier.style.setProperty('--research-lens-y', `${y}%`);
+}
+
+function handleResearchPointerEnter(event) {
+  if (!window.matchMedia('(hover: hover) and (pointer: fine)').matches) return;
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+  event.currentTarget.classList.add('is-magnifying');
+  moveResearchMagnifier(event);
+}
+
+function handleResearchPointerMove(event) {
+  if (!event.currentTarget.classList.contains('is-magnifying')) return;
+  moveResearchMagnifier(event);
+}
+
+function handleResearchPointerLeave(event) {
+  if (!window.matchMedia('(hover: hover) and (pointer: fine)').matches) return;
+  event.currentTarget.classList.remove('is-magnifying');
+}
+
 function animateTextElement(element, delay) {
   if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
 
-  if (!element.textContent.trim() || !element.getClientRects().length) return delay;
+  const text = element.textContent.trim();
+  if (!text || !element.getClientRects().length) return delay;
   if (element.matches('.button, .sr-only, .scroll-cue')) return delay;
   if (revealedTextElements.has(element)) return delay;
+  if (typeof element.animate !== 'function') return delay;
 
   revealedTextElements.add(element);
+  const isTouch = !window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+  const typewriterLimit = isTouch ? 42 : 96;
+  if (Array.from(text).length > typewriterLimit) {
+    const fadeDelay = isTouch ? Math.min(delay, 160) : delay;
+    const animation = element.animate(
+      [
+        { opacity: 0.62, transform: 'translateY(3px)' },
+        { opacity: 1, transform: 'translateY(0)' },
+      ],
+      { duration: isTouch ? 180 : 240, delay: fadeDelay, easing: 'ease-out', fill: 'both' },
+    );
+    animation.onfinish = () => {
+      element.style.opacity = '1';
+      element.style.transform = 'none';
+      animation.cancel();
+    };
+    return fadeDelay + (isTouch ? 60 : 100);
+  }
+
   const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
   const textNodes = [];
   while (walker.nextNode()) {
@@ -294,17 +352,22 @@ function animateTextElement(element, delay) {
 
 function animateSectionText(section) {
   if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  if (section.matches('.journey-section')) return;
+  const isTouch = !window.matchMedia('(hover: hover) and (pointer: fine)').matches;
 
   const textElements = [...section.querySelectorAll(textRevealSelector)].filter((element) => (
     element.textContent.trim()
     && element.getClientRects().length
     && !element.matches('.button, .sr-only')
+    && !(isTouch && element.matches('.chip'))
     && !element.parentElement?.closest(textRevealSelector)
   ));
 
   let nextDelay = 0;
-  textElements.forEach((element) => {
-    nextDelay = animateTextElement(element, nextDelay);
+  textElements.forEach((element, index) => {
+    const delay = isTouch ? Math.min(index * 18, 160) : nextDelay;
+    const nextElementDelay = animateTextElement(element, delay);
+    if (!isTouch) nextDelay = nextElementDelay;
   });
 }
 
@@ -434,8 +497,30 @@ onMounted(() => {
   document.addEventListener('visibilitychange', updateAutomaticTheme);
   document.querySelector('.site-shell')?.addEventListener('pointerover', handleSectionPointerOver);
 
-  const journeyCards = [...document.querySelectorAll('.journey-card')];
+  const researchCard = document.querySelector('.research-card');
+  const researchContent = researchCard?.querySelector('.research-card-content');
+  const magnifierCopy = researchCard?.querySelector('.research-magnifier-copy');
   const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const supportsHover = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+
+  if (researchContent && magnifierCopy) {
+    const contentClone = researchContent.cloneNode(true);
+    contentClone.querySelectorAll('[id]').forEach((element) => element.removeAttribute('id'));
+    magnifierCopy.append(contentClone);
+
+    if (!prefersReducedMotion && !supportsHover && 'IntersectionObserver' in window) {
+      researchMagnifierObserver = new IntersectionObserver((entries, observer) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
+          entry.target.classList.add('is-sweeping');
+          observer.unobserve(entry.target);
+        });
+      }, { threshold: 0.25 });
+      researchMagnifierObserver.observe(researchCard);
+    }
+  }
+
+  const journeyCards = [...document.querySelectorAll('.journey-card')];
   if (prefersReducedMotion || !('IntersectionObserver' in window)) {
     journeyCards.forEach((card) => card.classList.add('is-visible'));
   } else if (journeyCards.length) {
@@ -485,6 +570,7 @@ onUnmounted(() => {
   document.querySelector('.site-shell')?.removeEventListener('pointerover', handleSectionPointerOver);
   textRevealObserver?.disconnect();
   journeyObserver?.disconnect();
+  researchMagnifierObserver?.disconnect();
   window.clearTimeout(themeBoundaryTimer);
   window.clearTimeout(rocketFlightTimer);
   window.clearTimeout(toastTimer);
@@ -629,21 +715,35 @@ onUnmounted(() => {
         </section>
 
         <section class="research-section section-wrap" aria-labelledby="research-title">
-          <div class="research-card">
-            <p class="eyebrow">RESEARCH PRESENTATION &amp; AWARD · RCBS 2025</p>
-            <h2 id="research-title">Project management tools across sectors</h2>
-            <p class="research-summary">
-              I presented this research at the 6th Research Conference on Business Studies (RCBS 2025).
-            </p>
-            <p class="research-description">The award recognizes the sector-based evaluation of project management tools for:</p>
-            <ul class="research-sectors">
-              <li>International non-governmental organizations</li>
-              <li>Software companies</li>
-            </ul>
-            <p class="research-location">
-              <strong>Conference venue</strong>
-              <span>Faculty of Business Studies, University of Vavuniya, Sri Lanka</span>
-            </p>
+          <div
+            class="research-card"
+            @pointerenter="handleResearchPointerEnter"
+            @pointermove="handleResearchPointerMove"
+            @pointerleave="handleResearchPointerLeave"
+          >
+            <div class="research-card-content">
+              <p class="eyebrow">RESEARCH PRESENTATION &amp; AWARD · RCBS 2025</p>
+              <h2 id="research-title">Project management tools across sectors</h2>
+              <p class="research-summary">
+                I presented this research at the 6th Research Conference on Business Studies (RCBS 2025).
+              </p>
+              <p class="research-description">The award recognizes the sector-based evaluation of project management tools for:</p>
+              <ul class="research-sectors">
+                <li>International non-governmental organizations</li>
+                <li>Software companies</li>
+              </ul>
+              <p class="research-location">
+                <strong>Conference venue</strong>
+                <span>Faculty of Business Studies, University of Vavuniya, Sri Lanka</span>
+              </p>
+            </div>
+            <div class="research-magnifier" aria-hidden="true">
+              <div class="research-magnifier-window">
+                <div class="research-magnifier-copy"></div>
+              </div>
+              <span class="research-magnifier-handle"></span>
+              <span class="research-magnifier-lens"></span>
+            </div>
           </div>
         </section>
 

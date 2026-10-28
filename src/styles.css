@@ -4,6 +4,18 @@
   initial-value: 0deg;
 }
 
+@property --research-lens-x {
+  syntax: "<percentage>";
+  inherits: true;
+  initial-value: 8%;
+}
+
+@property --research-lens-y {
+  syntax: "<percentage>";
+  inherits: true;
+  initial-value: 22%;
+}
+
 :root {
   color-scheme: dark;
   font-family: "Segoe UI", Aptos, sans-serif;
@@ -1053,9 +1065,12 @@ summary:focus-visible {
   --ink: #292a22;
   --muted: #56533f;
   --line: rgb(41 42 34 / 24%);
+  --accent-text: #356c4a;
+  --research-card-paper: #fff4b3;
   border: 1px solid #d8c96f;
   border-left: 4px solid var(--blue);
-  background: #fff4b3;
+  background: var(--research-card-paper);
+  color: var(--ink);
   box-shadow: 8px 9px 0 var(--green), 14px 15px 20px rgb(0 0 0 / 14%);
   transform: rotate(-0.6deg);
   transition: transform 180ms var(--ease-fluid), box-shadow 180ms var(--ease-fluid);
@@ -1064,6 +1079,109 @@ summary:focus-visible {
 .research-card:hover {
   box-shadow: 10px 12px 0 var(--green), 18px 20px 24px rgb(0 0 0 / 16%);
   transform: translateY(-4px) rotate(0deg);
+}
+
+.research-magnifier {
+  --research-lens-x: 8%;
+  --research-lens-y: 22%;
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 160ms ease-out,
+    --research-lens-x 70ms ease-out,
+    --research-lens-y 70ms ease-out;
+}
+
+.research-card.is-magnifying .research-magnifier {
+  opacity: 1;
+}
+
+.research-card.is-sweeping .research-magnifier {
+  animation: research-magnifier-sweep 7s ease-in-out 350ms both;
+}
+
+.research-magnifier-window {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  overflow: hidden;
+  background: var(--research-card-paper);
+  clip-path: circle(56px at var(--research-lens-x) var(--research-lens-y));
+  transition: clip-path 70ms ease-out;
+}
+
+.research-magnifier-copy {
+  position: absolute;
+  inset: 0;
+  padding: clamp(22px, 4vw, 36px);
+  transform: scale(1.38);
+  transform-origin: var(--research-lens-x) var(--research-lens-y);
+  transition: transform-origin 70ms ease-out;
+}
+
+.research-magnifier-lens {
+  position: absolute;
+  z-index: 4;
+  top: var(--research-lens-y);
+  left: var(--research-lens-x);
+  width: 112px;
+  height: 112px;
+  border: 3px solid var(--blue);
+  border-radius: 50%;
+  background: transparent;
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--green) 35%, transparent),
+    0 0 18px color-mix(in srgb, var(--blue) 72%, transparent),
+    inset 0 0 15px color-mix(in srgb, var(--yellow) 22%, transparent);
+  transform: translate(-50%, -50%);
+  transition: top 70ms ease-out, left 70ms ease-out;
+}
+
+.research-magnifier-handle {
+  position: absolute;
+  z-index: 3;
+  top: var(--research-lens-y);
+  left: var(--research-lens-x);
+  width: 66px;
+  height: 10px;
+  border: 1px solid var(--ink);
+  border-radius: 99px;
+  background: linear-gradient(90deg, var(--blue), var(--green), var(--yellow), var(--red));
+  box-shadow: 0 0 10px color-mix(in srgb, var(--blue) 55%, transparent);
+  transform: translate(35px, 35px) rotate(45deg);
+  transform-origin: left center;
+  transition: top 70ms ease-out, left 70ms ease-out;
+}
+
+@keyframes research-magnifier-sweep {
+  0%, 8% {
+    --research-lens-x: 8%;
+    --research-lens-y: 20%;
+    opacity: 0;
+  }
+  16% {
+    --research-lens-x: 8%;
+    --research-lens-y: 20%;
+    opacity: 1;
+  }
+  45% {
+    --research-lens-x: 50%;
+    --research-lens-y: 42%;
+    opacity: 1;
+  }
+  72% {
+    --research-lens-x: 72%;
+    --research-lens-y: 72%;
+    opacity: 1;
+  }
+  86%, 100% {
+    --research-lens-x: 72%;
+    --research-lens-y: 72%;
+    opacity: 0;
+  }
 }
 
 .research-card::before {
@@ -1662,7 +1780,6 @@ summary:focus-visible {
 
 @supports (animation-timeline: view()) {
   .experience-card,
-  .journey-card,
   .skill-panel,
   .project-item,
   .document-card,
@@ -2535,6 +2652,31 @@ summary:focus-visible {
     transform: translateX(-50%) rotate(0.35deg);
   }
 
+  .profile-fan-glow {
+    filter: blur(9px) saturate(1.25);
+  }
+
+  .profile-edge-glow {
+    filter:
+      drop-shadow(0 0 2px var(--blue))
+      drop-shadow(0 0 5px var(--green));
+  }
+
+  .research-magnifier-window {
+    clip-path: circle(48px at var(--research-lens-x) var(--research-lens-y));
+  }
+
+  .research-magnifier-lens {
+    width: 96px;
+    height: 96px;
+  }
+
+  .research-magnifier-handle {
+    width: 46px;
+    height: 8px;
+    transform: translate(30px, 30px) rotate(45deg);
+  }
+
   .hero-note {
     right: 0;
     bottom: 4px;
@@ -2922,6 +3064,11 @@ summary:focus-visible {
 
   .profile-shimmer,
   .profile-sparkle {
+    display: none;
+    animation: none;
+  }
+
+  .research-magnifier {
     display: none;
     animation: none;
   }
